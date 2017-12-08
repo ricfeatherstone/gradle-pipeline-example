@@ -1,0 +1,153 @@
+def application = 'demo'
+def buildTag = "v1.0.0b${env.BUILD_ID}"
+def imageBuild = ''
+
+
+node('maven') {
+  stage('Checkout') {
+  	deleteDir()
+  	checkout scm
+  }
+  
+  stage('Compile') {
+    sh './gradlew --no-daemon build -x test'
+    stash name: 'jars', includes: 'build/libs/**'
+  }
+}
+
+stage('Test') {  
+  /**
+  parallel {
+    stage('Unit Tests') {
+      echo 'Running unit tests'
+    }
+    stage('Functional Tests') {
+      echo: 'Running functional tests'
+    }
+  }
+  */
+}
+
+stage('Build Image') {
+  openshift.withCluster() {
+    if(!openshift.selector('bc', application).exists()) {
+    
+    	  echo "Creating build config for ${application}"
+
+      openshift.newBuild("--name=${application}",
+        '--image-stream=openshift/redhat-openjdk18-openshift:1.1',
+        '--binary=true',
+        "--labels=app=${application}")
+    }
+     
+    unstash 'jars'
+          
+    echo "Starting build for ${application}"
+
+    build = openshift.startBuild(application,
+      '--from-dir=build/libs',
+      '--wait=true').narrow('build').object()
+    
+    namespace = build.status.config.namespace
+    name = build.status.config.name
+    imageDigest = build.status.output.to.imageDigest
+    buildNo = "${build.metadata.annotations.get('openshift.io/build.number')}"
+    
+    echo "Build number: ${buildNo}"
+    
+    echo "Completed build for ${application}: ${imageDigest}"
+    
+    buildTag < buildNo
+    imageBuild = "${namespace}/${name}:${buildTag}"
+
+    openshift.tag("${namespace}/${name}@${imageDigest}", imageBuild)
+  }
+}
+
+stage('Approve Deployment - Dev') {
+    timeout(time:5, unit:'DAYS') {
+      input message:"Approve deployment of ${buildTag} to dev?", ok: 'OK'
+    }
+}
+
+stage('Deploy - Dev') {
+  openshift.withCluster() {
+    echo "Tagging ${imageBuild} as dev/${application}:latest"
+    openshift.tag(imageBuild, "dev/${application}:latest")
+    
+    openshift.withProject('dev') {  
+      if(!openshift.selector('dc', "${application}").exists()) {
+        echo "Creating deployment for ${application} in dev"
+
+        openshift.newApp("${application}:latest")
+        openshift.selector('svc', application).expose()
+      }
+    }
+  }
+}
+
+stage('Approve Deployment - Test') {
+    timeout(time:5, unit:'DAYS') {
+      input message:"Approve deployment of ${buildTag} to test?", ok: 'OK'
+    }
+}
+
+stage('Deploy - Test') {
+  openshift.withCluster() {
+    echo "Tagging ${imageBuild} as test/${application}:latest"
+    openshift.tag(imageBuild, "test/${application}:latest")
+    
+    openshift.withProject('test') {  
+      if(!openshift.selector('dc', "${application}").exists()) {
+        echo "Creating deployment for ${application} application in test"
+
+        openshift.newApp("${application}:latest")
+        openshift.selector('svc', application).expose()
+      }
+    }
+  }
+}
+
+stage('Approve Deployment - Pre-Prod') {
+    timeout(time:5, unit:'DAYS') {
+      input message:"Approve deployment of ${buildTag} to pre-prod?", ok: 'OK'
+    }
+}
+
+stage('Deploy - Pre-Prod') {
+  openshift.withCluster() {
+    echo "Tagging ${imageBuild} as pre-prod/${application}:latest"
+    openshift.tag(imageBuild, "pre-prod/${application}:latest")
+    
+    openshift.withProject('pre-prod') {  
+      if(!openshift.selector('dc', "${application}").exists()) {
+        echo "Creating deployment for ${application} application in pre-prod"
+
+        openshift.newApp("${application}:latest")
+        openshift.selector('svc', application).expose()
+      }
+    }
+  }
+}
+
+stage('Approve Deployment - Prod') {
+    timeout(time:5, unit:'DAYS') {
+      input message:"Approve deployment of ${buildTag} to prod?", ok: 'OK'
+    }
+}
+
+stage('Deploy - Prod') {
+  openshift.withCluster() {
+    echo "Tagging ${imageBuild} as prod/${application}:latest"
+    openshift.tag(imageBuild, "prod/${application}:latest")
+    
+    openshift.withProject('prod') {  
+      if(!openshift.selector('dc', "${application}").exists()) {
+        echo "Creating deployment for ${application} application in prod"
+
+        openshift.newApp("${application}:latest")
+        openshift.selector('svc', application).expose()
+      }
+    }
+  }
+}
