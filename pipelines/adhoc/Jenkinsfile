@@ -1,0 +1,39 @@
+def cicdProject = 'cicd'
+def application = 'demo'
+def projects = []
+def project = ''
+def tags = []
+def tag = ''
+
+stage('Retrieve Options') {
+    openshift.withCluster(){
+        is = openshift.selector('is', application).object()
+        tags = is.status.tags.collect{it.tag}.join('\n')
+        projects = openshift.raw('projects -q').actions[0].out.minus("${cicdProject}\n")
+
+    }
+}
+
+stage('Specify Deployment') {
+    timeout(time: 60, unit: 'SECONDS') {
+        deploy = input(
+        	id: 'Proceed1', 
+        	message: 'Was this successful?', 
+        	parameters: [
+        		[$class: 'ChoiceParameterDefinition', choices: projects, description: 'Deploy to', name: 'project'],
+        		[$class: 'ChoiceParameterDefinition', choices: tags, description: 'Deploy version?', name: 'tag']
+        	]
+        )
+        
+        project = deploy['project']
+        tag = deploy['tag']
+    }
+}
+
+stage('Deployment') {
+    echo "Tagging ${cicdProject}/${application}:${tag} as ${project}/${application}:latest"
+    
+    openshift.withCluster() {
+        openshift.tag("${cicdProject}/${application}:${tag}", "${project}/${application}:latest")
+    }
+}

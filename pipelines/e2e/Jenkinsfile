@@ -1,0 +1,164 @@
+def name = 'demo'
+def version = '1.0.0'
+
+def buildTag
+
+node('maven') {
+  stage('Checkout') {
+  	deleteDir()
+  	checkout scm
+  }
+  
+  stage('Compile') {
+    sh './gradlew --no-daemon build -x test'
+    stash name: 'jars', includes: 'build/libs/**'
+  }
+}
+
+stage('Test') {  
+  /**
+  node('maven')
+    parallel {
+      stage('Unit Tests') {
+        echo 'Running unit tests'
+      }
+      stage('Functional Tests') {
+        echo: 'Running functional tests'
+      }
+    }
+  }
+  */
+}
+
+stage('Build Image') {
+  openshift.withCluster() {
+    if(!openshift.selector('bc', name).exists()) {
+    
+    	  echo "Creating build config for ${name}"
+
+      openshift.newBuild("--name=${name}",
+        '--image-stream=openshift/redhat-openjdk18-openshift:1.2',
+        '--binary=true',
+        "--labels=app=${name}")
+    }
+     
+    unstash 'jars'
+          
+    echo "Starting build for ${name}"
+
+    build = openshift.startBuild(name,
+      '--from-dir=build/libs',
+      '--wait=true').narrow('build').object()
+    
+    namespace = build.status.config.namespace
+    name = build.status.config.name
+    imageDigest = build.status.output.to.imageDigest
+    buildNo = "${build.metadata.annotations.get('openshift.io/build.number')}"
+        
+    image = "${namespace}/${name}@${imageDigest}"
+        
+    echo "Completed building image: ${image}"
+    
+    buildTag = "${namespace}/${name}:v${version}b${buildNo}"
+    
+    echo "Tagging image: ${buildTag}"
+
+    openshift.tag(image, buildTag)
+  }
+}
+
+stage('Approve Deployment - Dev') {
+  timeout(time:5, unit:'DAYS') {
+    input message:"Approve deployment of ${buildTag} to dev?", ok: 'OK'
+  }
+}
+
+stage('Deploy - Dev') {
+  environmentTag = "dev/${name}:latest"
+  
+  openshift.withCluster() {
+    echo "Tagging ${buildTag} as ${environmentTag}"
+    openshift.tag(buildTag, environmentTag)
+    
+    openshift.withProject('dev') {  
+      if(!openshift.selector('dc', "${name}").exists()) {
+        echo "Creating deployment for ${name} in dev"
+
+        openshift.newApp("${name}:latest")
+        openshift.selector('svc', name).expose()
+      }
+    }
+  }
+}
+
+stage('Approve Deployment - Test') {
+    timeout(time:5, unit:'DAYS') {
+      input message:"Approve deployment of ${buildTag} to test?", ok: 'OK'
+    }
+}
+
+stage('Deploy - Test') {
+  environmentTag = "test/${name}:latest"
+
+  openshift.withCluster() {
+    echo "Tagging ${buildTag} as ${environmentTag}"
+    openshift.tag(buildTag, environmentTag)
+    
+    openshift.withProject('test') {  
+      if(!openshift.selector('dc', "${name}").exists()) {
+        echo "Creating deployment for ${name} in test"
+
+        openshift.newApp("${name}:latest")
+        openshift.selector('svc', name).expose()
+      }
+    }
+  }
+}
+
+stage('Approve Deployment - Pre-Prod') {
+    timeout(time:5, unit:'DAYS') {
+      input message:"Approve deployment of ${buildTag} to pre-prod?", ok: 'OK'
+    }
+}
+
+stage('Deploy - Pre-Prod') {
+  environmentTag = "pre-prod/${name}:latest"
+  
+  openshift.withCluster() {
+    echo "Tagging ${buildTag} as ${environmentTag}"
+    openshift.tag(buildTag, environmentTag)
+    
+    openshift.withProject('pre-prod') {  
+      if(!openshift.selector('dc', "${name}").exists()) {
+        echo "Creating deployment for ${name} in pre-prod"
+
+        openshift.newApp("${name}:latest")
+        openshift.selector('svc', name).expose()
+      }
+    }
+  }
+}
+
+stage('Approve Deployment - Prod') {
+    timeout(time:5, unit:'DAYS') {
+      input message:"Approve deployment of ${buildTag} to prod?", ok: 'OK'
+    }
+}
+
+stage('Deploy - Prod') {
+  environmentTag = "prod/${name}:latest"
+  
+  openshift.withCluster() {
+    echo "Tagging ${buildTag} as ${environmentTag}"
+    openshift.tag(buildTag, environmentTag)
+    
+    openshift.withProject('prod') {  
+      if(!openshift.selector('dc', "${name}").exists()) {
+        echo "Creating deployment for ${name} in prod"
+
+        openshift.newApp("${name}:latest")
+        openshift.selector('svc', name).expose()
+      }
+    }
+  }
+}
