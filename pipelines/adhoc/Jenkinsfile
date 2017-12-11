@@ -1,39 +1,34 @@
-def cicdProject = 'cicd'
-def application = 'demo'
-def projects = []
-def project = ''
-def tags = []
-def tag = ''
+def name = 'demo'
+def buildNamespace = 'cicd'
+def deployNamespaces = ['dev', 'test', 'pre-prod', 'prod']
 
-stage('Retrieve Options') {
-    openshift.withCluster(){
-        is = openshift.selector('is', application).object()
-        tags = is.status.tags.collect{it.tag}.join('\n')
-        projects = openshift.raw('projects -q').actions[0].out.minus("${cicdProject}\n")
+def tags, tag, deployTo
 
-    }
+stage('Selection') {
+  openshift.withCluster(){
+    is = openshift.selector('is', name).object()
+    tags = is.status.tags.collect{it.tag}.join('\n')
+  }
+  
+  timeout(time: 5, unit: 'MINUTES') {
+    deploy = input(
+      	id: 'Proceed', 
+      	message: 'Specify Deployment', 
+      	parameters: [
+      		[$class: 'ChoiceParameterDefinition', choices: deployNamespaces.join('\n'), description: 'Deploy to', name: 'deployTo'],
+      		[$class: 'ChoiceParameterDefinition', choices: tags, description: 'Deploy version?', name: 'tag']
+      	]
+    )
+      
+    deployTo = deploy['deployTo']
+    tag = deploy['tag']
+  }
 }
 
-stage('Specify Deployment') {
-    timeout(time: 60, unit: 'SECONDS') {
-        deploy = input(
-        	id: 'Proceed1', 
-        	message: 'Was this successful?', 
-        	parameters: [
-        		[$class: 'ChoiceParameterDefinition', choices: projects, description: 'Deploy to', name: 'project'],
-        		[$class: 'ChoiceParameterDefinition', choices: tags, description: 'Deploy version?', name: 'tag']
-        	]
-        )
-        
-        project = deploy['project']
-        tag = deploy['tag']
-    }
-}
-
-stage('Deployment') {
-    echo "Tagging ${cicdProject}/${application}:${tag} as ${project}/${application}:latest"
-    
-    openshift.withCluster() {
-        openshift.tag("${cicdProject}/${application}:${tag}", "${project}/${application}:latest")
-    }
+stage("Deployment") {
+  echo "Deploying ${buildNamespace}/${name}:${tag} to ${deployTo}" 
+     
+  openshift.withCluster() { 
+    openshift.tag("${buildNamespace}/${name}:${tag}", "${deployTo}/${name}:latest") 
+  } 
 }

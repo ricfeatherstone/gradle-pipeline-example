@@ -1,5 +1,6 @@
 def name = 'demo'
 def version = '1.0.0'
+def deployNamespaces = ['dev', 'test', 'pre-prod', 'prod']
 
 def buildTag
 
@@ -67,97 +68,27 @@ stage('Build Image') {
   }
 }
 
-stage('Approve Deployment - Dev') {
-  timeout(time:5, unit:'DAYS') {
-    input message:"Approve deployment of ${buildTag} to dev?", ok: 'OK'
-  }
-}
-
-stage('Deploy - Dev') {
-  environmentTag = "dev/${name}:latest"
-  
-  openshift.withCluster() {
-    echo "Tagging ${buildTag} as ${environmentTag}"
-    openshift.tag(buildTag, environmentTag)
-    
-    openshift.withProject('dev') {  
-      if(!openshift.selector('dc', "${name}").exists()) {
-        echo "Creating deployment for ${name} in dev"
-
-        openshift.newApp("${name}:latest")
-        openshift.selector('svc', name).expose()
-      }
-    }
-  }
-}
-
-stage('Approve Deployment - Test') {
+deployNamespaces.each { env ->
+  stage("Approve Deployment - ${env}") {
     timeout(time:5, unit:'DAYS') {
-      input message:"Approve deployment of ${buildTag} to test?", ok: 'OK'
-    }
-}
-
-stage('Deploy - Test') {
-  environmentTag = "test/${name}:latest"
-
-  openshift.withCluster() {
-    echo "Tagging ${buildTag} as ${environmentTag}"
-    openshift.tag(buildTag, environmentTag)
-    
-    openshift.withProject('test') {  
-      if(!openshift.selector('dc', "${name}").exists()) {
-        echo "Creating deployment for ${name} in test"
-
-        openshift.newApp("${name}:latest")
-        openshift.selector('svc', name).expose()
-      }
+      input message:"Approve deployment of ${buildTag} to ${env}?", ok: 'OK'
     }
   }
-}
-
-stage('Approve Deployment - Pre-Prod') {
-    timeout(time:5, unit:'DAYS') {
-      input message:"Approve deployment of ${buildTag} to pre-prod?", ok: 'OK'
-    }
-}
-
-stage('Deploy - Pre-Prod') {
-  environmentTag = "pre-prod/${name}:latest"
   
-  openshift.withCluster() {
-    echo "Tagging ${buildTag} as ${environmentTag}"
-    openshift.tag(buildTag, environmentTag)
+  stage("Deploy - ${env}") {
+    environmentTag = "${env}/${name}:latest"
     
-    openshift.withProject('pre-prod') {  
-      if(!openshift.selector('dc', "${name}").exists()) {
-        echo "Creating deployment for ${name} in pre-prod"
-
-        openshift.newApp("${name}:latest")
-        openshift.selector('svc', name).expose()
-      }
-    }
-  }
-}
-
-stage('Approve Deployment - Prod') {
-    timeout(time:5, unit:'DAYS') {
-      input message:"Approve deployment of ${buildTag} to prod?", ok: 'OK'
-    }
-}
-
-stage('Deploy - Prod') {
-  environmentTag = "prod/${name}:latest"
+    openshift.withCluster() {
+      echo "Tagging ${buildTag} as ${environmentTag}"
+      openshift.tag(buildTag, environmentTag)
+      
+      openshift.withProject("${env}") {  
+        if(!openshift.selector('dc', "${name}").exists()) {
+          echo "Creating deployment for ${name} in ${env}"
   
-  openshift.withCluster() {
-    echo "Tagging ${buildTag} as ${environmentTag}"
-    openshift.tag(buildTag, environmentTag)
-    
-    openshift.withProject('prod') {  
-      if(!openshift.selector('dc', "${name}").exists()) {
-        echo "Creating deployment for ${name} in prod"
-
-        openshift.newApp("${name}:latest")
-        openshift.selector('svc', name).expose()
+          openshift.newApp("${name}:latest")
+          openshift.selector('svc', name).expose()
+        }
       }
     }
   }
