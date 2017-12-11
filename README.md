@@ -52,7 +52,7 @@ Modify the contents of `/var/lib/jenkins/scriptApproval.xml` as below and restar
 <scriptApproval plugin="script-security@1.31">
   <approvedScriptHashes/>
   <approvedSignatures>
-    <string>staticMethod org.codehaus.groovy.runtime.DefaultGroovyMethods minus java.lang.String java.lang.Object</string>
+    <string>method java.lang.String join java.lang.CharSequence java.lang.CharSequence[]</string>
     <string>field hudson.plugins.git.GitSCM remoteRepositories</string>
     <string>field org.eclipse.jgit.transport.RemoteConfig uris</string>
   </approvedSignatures>
