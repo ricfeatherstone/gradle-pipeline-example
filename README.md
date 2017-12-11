@@ -40,8 +40,30 @@ oc new-app jenkins-ephemeral \
     -p JENKINS_IMAGE_STREAM_TAG=jenkins:2 \
     -p MEMORY_LIMIT=1Gi \
     -e OPENSHIFT_JENKINS_JVM_ARCH=x86_64 \
-    -e INSTALL_PLUGINS=openshift-client:1.0.3
+    -e INSTALL_PLUGINS=openshift-client:1.0.3,workflow-aggregator:2.5,workflow-cps:2.41 \
+    -e JAVA_GC_OPTS='-XX:+UseParallelGC -XX:MinHeapFreeRatio=5 -XX:MaxHeapFreeRatio=10 -XX:GCTimeRatio=4 -XX:AdaptiveSizePolicyWeight=90'
 ```
+
+Modify the contents of `/var/lib/jenkins/scriptApproval.xml` as below and restart jenkins
+
+
+```
+<?xml version='1.0' encoding='UTF-8'?>
+<scriptApproval plugin="script-security@1.31">
+  <approvedScriptHashes/>
+  <approvedSignatures>
+    <string>staticMethod org.codehaus.groovy.runtime.DefaultGroovyMethods minus java.lang.String java.lang.Object</string>
+    <string>field hudson.plugins.git.GitSCM remoteRepositories</string>
+    <string>field org.eclipse.jgit.transport.RemoteConfig uris</string>
+  </approvedSignatures>
+  <aclApprovedSignatures/>
+  <approvedClasspathEntries/>
+  <pendingScripts/>
+  <pendingSignatures/>
+  <pendingClasspathEntries/>
+</scriptApproval>
+```
+
 
 ## Pipeline Creation
 ```
